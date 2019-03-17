@@ -26,17 +26,21 @@
 #
 # Share and enjoy! :-)
 #
-export VERSION="20190319-0.9"
+export VERSION="20190319-0.9.1"
 USAGE="usage: $0 [-v] [-n] [[-o] [-m] [-a] | [-d]] [-k] [-h] /path/2/clone /clone/under
 
 	-v		be verbose (def: be silent except for errors and warnings)
+
 	-n		no op, do nothing (def: do, kill, remove as needed)
 
-	-o		change ownership of /path/2/clone dirs under /clone/under (def: do not change)
-			    NOTE: rsync always sets ownership at and below /path/2/clone if superuser
-	-m		change permission of /path/2/clone dirs under /clone/under (def: do not change)
-			    NOTE: rsync always sets permissions at and below /path/2/clone
-	-a		clone under absolute canonical path of /path/2/clone (def: clone /path/2/clone as is)
+	-o		change ownership of dirs from /clone/under thru /clone/under/path/2 (def: do not change)
+			    NOTE: rsync always sets ownership at and below /clone/under/path/2/clone if superuser
+
+	-m		change permission of dirs from /clone/under thru /clone/under/path/2 (def: do not change)
+			    NOTE: rsync always sets permissions at and below /clone/under/path/2/clone
+
+	-a		clone under the absolute canonical path of /path/2/clone (def: clone /path/2/clone as is)
+			    NOTE: with -o and/or -a, ownership and permissions at or below /clone/under may be set
 
 	-d		clone directly into /clone/under (def: clone into /clone/under/path/2/clone)
 			   -d conflicts with -o, -m and -a
@@ -591,7 +595,7 @@ while [[ -z "$D_FLAG" && -n "$DIR" ]]; do
     #
     if [[ -n "$M_FLAG" ]]; then
 	if [[ -n "$V_FLAG" ]]; then
-	    echo "$0: notice: validating permissin of the input path: $DIR"
+	    echo "$0: notice: validating permission of the input path: $DIR"
 	fi
 	SRC_OWNER_MODE=$("$STAT" -f '%p' "$DIR" 2>/dev/null)
 	DEST_OWNER_MODE=$("$STAT" -f '%p' "$TOP$DIR" 2>/dev/null)
