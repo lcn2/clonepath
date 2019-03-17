@@ -26,7 +26,7 @@
 #
 # Share and enjoy! :-)
 #
-USAGE="usage: $0 [-v] [-n] [[-o] [-m] [-a] | [-d]] [-h] path_to_clone clone_under
+USAGE="usage: $0 [-v] [-n] [[-o] [-m] [-a] | [-d]] [-k] [-h] path_to_clone clone_under
 
 	-v		be verbose (def: be silent except for errors and warnings)
 	-n		no op, do nothing (def: do, kill, remove as needed)
@@ -39,6 +39,9 @@ USAGE="usage: $0 [-v] [-n] [[-o] [-m] [-a] | [-d]] [-h] path_to_clone clone_unde
 
 	-d		clone directly into clone_under (def: clone to clone_under/path_to_clone)
 			   -d conflicts with -o, -m and -a
+
+	-k		keep files and dirs found in target that are not found in source (def: delete them)
+			    NOTE: Without -k, rsync uses the --delete option
 
 	-h		print this message and exit 0
 
@@ -53,12 +56,13 @@ export O_FLAG=
 export M_FLAG=
 export A_FLAG=
 export D_FLAG=
+export K_FLAG=
 
 # parse args
 #
 # getopts is a bsh builtin
 #
-while getopts vnomadh flag; do
+while getopts vnomadkh flag; do
     case "$flag" in
     v) V_FLAG=true ;;
     n) N_FLAG=true ;;
@@ -66,6 +70,7 @@ while getopts vnomadh flag; do
     m) M_FLAG=true ;;
     a) A_FLAG=true ;;
     d) D_FLAG=true ;;
+    k) K_FLAG=true ;;
     h) echo "$USAGE" 1>&2
        exit 0
        ;;
@@ -99,142 +104,240 @@ if [[ -n "$V_FLAG" ]]; then
     if [[ -n "$D_FLAG" ]]; then
 	echo "$0: notice: flag set: -d"
     fi
+    if [[ -n "$K_FLAG" ]]; then
+	echo "$0: notice: flag set: -k"
+    fi
 fi
 
-# look for critical binaries
+# look for important or critical binaries
 #
-# We will be very safe and only look for system utilities
-# in standard locations instead of assuming $PATH is setup.
-#
-# No executable is searched along $PATH.  Instead we search
-# for executables as if we have the PATH:
-#
-#	/usr/bin:/bin:/usr/local/bin:/usr/global/bin
-#
-# and for chown:
-#
-#	/usr/sbin:/sbin:/usr/bin:/bin:/usr/local/bin:/usr/global/bin
-#
-# This paranoia helps protect root when it uses this tool.
-#
-export REALPATH=
-if [[ -x /usr/bin/realpath ]]; then
-    REALPATH="/usr/bin/realpath"
-elif [[ -x /bin/realpath ]]; then
-    REALPATH="/bin/realpath"
-elif [[ -x /usr/local/bin/realpath ]]; then
-    REALPATH="/usr/local/bin/realpath"
-elif [[ -x /usr/global/bin/realpath ]]; then
-    REALPATH="/usr/global/bin/realpath"
+export REALPATH="$(which realpath 2>/dev/null)"
+if [[ ! -x $REALPATH ]]; then
+    REALPATH=
+    if [[ -x /usr/bin/realpath ]]; then
+	REALPATH="/usr/bin/realpath"
+    elif [[ -x /bin/realpath ]]; then
+	REALPATH="/bin/realpath"
+    elif [[ -x /usr/local/bin/realpath ]]; then
+	REALPATH="/usr/local/bin/realpath"
+    elif [[ -x /usr/global/bin/realpath ]]; then
+	REALPATH="/usr/global/bin/realpath"
+    elif [[ -x $HOME/bin/realpath ]]; then
+	REALPATH="$HOME/bin/realpath"
+    elif [[ -n "$V_FLAG" ]]; then
+	echo "$0: notice: no realpath executable found, this might be OK"
+    fi
+fi
+if [[ -n "$REALPATH" && -n "$V_FLAG" ]]; then
+    echo "$0: notice: realpath executable: $REALPATH"
 fi
 #
-export PYTHON=
-if [[ -x /usr/bin/python ]]; then
-    PYTHON="/usr/bin/python"
-elif [[ -x /bin/python ]]; then
-    PYTHON="/bin/python"
-elif [[ -x /usr/local/bin/python ]]; then
-    PYTHON="/usr/local/bin/python"
-elif [[ -x /usr/global/bin/python ]]; then
-    PYTHON="/usr/global/bin/python"
+export PYTHON="$(which python 2>/dev/null)"
+if [[ ! -x $PYTHON ]]; then
+    PYTHON=
+    if [[ -x /usr/bin/python ]]; then
+	PYTHON="/usr/bin/python"
+    elif [[ -x /bin/python ]]; then
+	PYTHON="/bin/python"
+    elif [[ -x /usr/local/bin/python ]]; then
+	PYTHON="/usr/local/bin/python"
+    elif [[ -x /usr/global/bin/python ]]; then
+	PYTHON="/usr/global/bin/python"
+    elif [[ -x $HOME/bin/python ]]; then
+	PYTHON="$HOME/bin/python"
+    elif [[ -n "$V_FLAG" ]]; then
+	echo "$0: notice: no python executable found, this might be OK"
+    fi
+fi
+if [[ -n $PYTHON && -n "$V_FLAG" ]]; then
+    echo "$0: notice: python executable: $PYTHON"
 fi
 #
-export PWD_BIN=
-if [[ -x /usr/bin/pwd ]]; then
-    PWD_BIN="/usr/bin/pwd"
-elif [[ -x /bin/pwd ]]; then
-    PWD_BIN="/bin/pwd"
-elif [[ -x /usr/local/bin/pwd ]]; then
-    PWD_BIN="/usr/local/bin/pwd"
-elif [[ -x /usr/global/bin/pwd ]]; then
-    PWD_BIN="/usr/global/bin/pwd"
+export PWD_BIN="$(which pwd 2>/dev/null)"
+if [[ ! -x $PWD_BIN ]]; then
+    PWD_BIN=
+    if [[ -x /usr/bin/pwd ]]; then
+	PWD_BIN="/usr/bin/pwd"
+    elif [[ -x /bin/pwd ]]; then
+	PWD_BIN="/bin/pwd"
+    elif [[ -x /usr/local/bin/pwd ]]; then
+	PWD_BIN="/usr/local/bin/pwd"
+    elif [[ -x /usr/global/bin/pwd ]]; then
+	PWD_BIN="/usr/global/bin/pwd"
+    elif [[ -x $HOME/bin/pwd ]]; then
+	PWD_BIN="$HOME/bin/pwd"
+    elif [[ -n "$V_FLAG" ]]; then
+	echo "$0: notice: no pwd executable found, this might be OK"
+    fi
+fi
+if [[ -n "$PWD_BIN" && -n "$V_FLAG" ]]; then
+    echo "$0: notice: pwd executable: $PWD_BIN"
 fi
 #
-export DIRNAME=
-if [[ -x /usr/bin/dirname ]]; then
-    DIRNAME="/usr/bin/dirname"
-elif [[ -x /bin/dirname ]]; then
-    DIRNAME="/bin/dirname"
-elif [[ -x /usr/local/bin/dirname ]]; then
-    DIRNAME="/usr/local/bin/dirname"
-elif [[ -x /usr/global/bin/dirname ]]; then
-    DIRNAME="/usr/global/bin/dirname"
+export DIRNAME="$(which dirname 2>/dev/null)"
+if [[ ! -x $DIRNAME ]]; then
+    DIRNAME=
+    if [[ -x /usr/bin/dirname ]]; then
+	DIRNAME="/usr/bin/dirname"
+    elif [[ -x /bin/dirname ]]; then
+	DIRNAME="/bin/dirname"
+    elif [[ -x /usr/local/bin/dirname ]]; then
+	DIRNAME="/usr/local/bin/dirname"
+    elif [[ -x /usr/global/bin/dirname ]]; then
+	DIRNAME="/usr/global/bin/dirname"
+    elif [[ -x $HOME/bin/dirname ]]; then
+	DIRNAME="$HOME/bin/dirname"
+    else
+	echo "$0: FATAL: cannot find dirname executable" 1>&2
+	exit 3
+    fi
+fi
+if [[ -n "$DIRNAME" && -n "$V_FLAG" ]]; then
+    echo "$0: notice: dirname executable: $DIRNAME"
 fi
 #
-export BASENAME=
-if [[ -x /usr/bin/basename ]]; then
-    BASENAME="/usr/bin/basename"
-elif [[ -x /bin/basename ]]; then
-    BASENAME="/bin/basename"
-elif [[ -x /usr/local/bin/basename ]]; then
-    BASENAME="/usr/local/bin/basename"
-elif [[ -x /usr/global/bin/basename ]]; then
-    BASENAME="/usr/global/bin/basename"
+export RSYNC="$(which rsync 2>/dev/null)"
+if [[ ! -x $RSYNC ]]; then
+    RSYNC=
+    if [[ -x /usr/bin/rsync ]]; then
+	RSYNC="/usr/bin/rsync"
+    elif [[ -x /bin/rsync ]]; then
+	RSYNC="/bin/rsync"
+    elif [[ -x /usr/local/bin/rsync ]]; then
+	RSYNC="/usr/local/bin/rsync"
+    elif [[ -x /usr/global/bin/rsync ]]; then
+	RSYNC="/usr/global/bin/rsync"
+    elif [[ -x $HOME/bin/rsync ]]; then
+	RSYNC="$HOME/bin/rsync"
+    else
+	echo "$0: FATAL: cannot find rsync executable" 1>&2
+	exit 4
+    fi
+fi
+if [[ -n "$RSYNC" && -n "$V_FLAG" ]]; then
+    echo "$0: notice: rsync executable: $RSYNC"
 fi
 #
-export RSYNC=
-if [[ -x /usr/bin/rsync ]]; then
-    RSYNC="/usr/bin/rsync"
-elif [[ -x /bin/rsync ]]; then
-    RSYNC="/bin/rsync"
-elif [[ -x /usr/local/bin/rsync ]]; then
-    RSYNC="/usr/local/bin/rsync"
-elif [[ -x /usr/global/bin/rsync ]]; then
-    RSYNC="/usr/global/bin/rsync"
+export BASENAME="$(which basename 2>/dev/null)"
+if [[ ! -x $BASENAME ]]; then
+    BASENAME=
+    if [[ -x /usr/bin/basename ]]; then
+	BASENAME="/usr/bin/basename"
+    elif [[ -x /bin/basename ]]; then
+	BASENAME="/bin/basename"
+    elif [[ -x /usr/local/bin/basename ]]; then
+	BASENAME="/usr/local/bin/basename"
+    elif [[ -x /usr/global/bin/basename ]]; then
+	BASENAME="/usr/global/bin/basename"
+    elif [[ -x $HOME/bin/basename ]]; then
+	BASENAME="$HOME/bin/basename"
+    elif [[ -n "$V_FLAG" ]]; then
+	echo "$0: notice: no basename executable found, this might be OK"
+    fi
+fi
+if [[ -n "$BASENAME" && -n "$V_FLAG" ]]; then
+    echo "$0: notice: basename executable: $BASENAME"
 fi
 #
-export MKDIR=
-if [[ -x /usr/bin/mkdir ]]; then
-    MKDIR="/usr/bin/mkdir"
-elif [[ -x /bin/mkdir ]]; then
-    MKDIR="/bin/mkdir"
-elif [[ -x /usr/local/bin/mkdir ]]; then
-    MKDIR="/usr/local/bin/mkdir"
-elif [[ -x /usr/global/bin/mkdir ]]; then
-    MKDIR="/usr/global/bin/mkdir"
+export MKDIR="$(which mkdir 2>/dev/null)"
+if [[ ! -x $MKDIR ]]; then
+    MKDIR=
+    if [[ -x /usr/bin/mkdir ]]; then
+	MKDIR="/usr/bin/mkdir"
+    elif [[ -x /bin/mkdir ]]; then
+	MKDIR="/bin/mkdir"
+    elif [[ -x /usr/local/bin/mkdir ]]; then
+	MKDIR="/usr/local/bin/mkdir"
+    elif [[ -x /usr/global/bin/mkdir ]]; then
+	MKDIR="/usr/global/bin/mkdir"
+    elif [[ -x $HOME/bin/mkdir ]]; then
+	MKDIR="$HOME/bin/mkdir"
+    else
+	echo "$0: FATAL: cannot find mkdir executable" 1>&2
+	exit 5
+    fi
+fi
+if [[ -n "$MKDIR" && -n "$V_FLAG" ]]; then
+    echo "$0: notice: mkdir executable: $MKDIR"
 fi
 #
 export STAT=
 if [[ -n "$O_FLAG" || -n "$M_FLAG" ]]; then
-    if [[ -x /usr/bin/stat ]]; then
-	STAT="/usr/bin/stat"
-    elif [[ -x /bin/stat ]]; then
-	STAT="/bin/stat"
-    elif [[ -x /usr/local/bin/stat ]]; then
-	STAT="/usr/local/bin/stat"
-    elif [[ -x /usr/global/bin/stat ]]; then
-	STAT="/usr/global/bin/stat"
+    STAT="$(which stat 2>/dev/null)"
+    if [[ ! -x $STAT ]]; then
+	STAT=
+	if [[ -x /usr/bin/stat ]]; then
+	    STAT="/usr/bin/stat"
+	elif [[ -x /bin/stat ]]; then
+	    STAT="/bin/stat"
+	elif [[ -x /usr/local/bin/stat ]]; then
+	    STAT="/usr/local/bin/stat"
+	elif [[ -x /usr/global/bin/stat ]]; then
+	    STAT="/usr/global/bin/stat"
+	elif [[ -x $HOME/bin/stat ]]; then
+	    STAT="$HOME/bin/stat"
+	else
+	    echo "$0: FATAL: using -o or -n and cannot find stat executable" 1>&2
+	    exit 6
+	fi
     fi
+fi
+if [[ -n "$STAT" && -n "$V_FLAG" ]]; then
+    echo "$0: notice: stat executable: $STAT"
 fi
 #
 export CHOWN=
-if [[ -n "$O_FLAG" ]]; then
-    if [[ -x /usr/sbin/chown ]]; then
-	CHOWN="/usr/sbin/chown"
-    elif [[ -x /sbin/chown ]]; then
-	CHOWN="/sbin/chown"
-    elif [[ -x /usr/bin/chown ]]; then
-	CHOWN="/usr/bin/chown"
-    elif [[ -x /bin/chown ]]; then
-	CHOWN="/bin/chown"
-    elif [[ -x /usr/local/bin/chown ]]; then
-	CHOWN="/usr/local/bin/chown"
-    elif [[ -x /usr/global/bin/chown ]]; then
-	CHOWN="/usr/global/bin/chown"
+if [[ -z "$D_FLAG" && -n "$O_FLAG" ]]; then
+    CHOWN="$(which chown 2>/dev/null)"
+    if [[ ! -x $CHOWN ]]; then
+	CHOWN=
+	if [[ -x /usr/sbin/chown ]]; then
+	    CHOWN="/usr/sbin/chown"
+	elif [[ -x /sbin/chown ]]; then
+	    CHOWN="/sbin/chown"
+	elif [[ -x /usr/bin/chown ]]; then
+	    CHOWN="/usr/bin/chown"
+	elif [[ -x /bin/chown ]]; then
+	    CHOWN="/bin/chown"
+	elif [[ -x /usr/local/bin/chown ]]; then
+	    CHOWN="/usr/local/bin/chown"
+	elif [[ -x /usr/global/bin/chown ]]; then
+	    CHOWN="/usr/global/bin/chown"
+	elif [[ -x $HOME/bin/chown ]]; then
+	    CHOWN="$HOME/bin/chown"
+	else
+	    echo "$0: FATAL: using -o and cannot find chown executable" 1>&2
+	    exit 7
+	fi
     fi
+fi
+if [[ -n "$CHOWN" && -n "$V_FLAG" ]]; then
+    echo "$0: notice: chown executable: $CHOWN"
 fi
 #
 export CHMOD=
 if [[ -n "$M_FLAG" ]]; then
-    if [[ -x /usr/bin/chmod ]]; then
-	CHMOD="/usr/bin/chmod"
-    elif [[ -x /bin/chmod ]]; then
-	CHMOD="/bin/chmod"
-    elif [[ -x /usr/local/bin/chmod ]]; then
-	CHMOD="/usr/local/bin/chmod"
-    elif [[ -x /usr/global/bin/chmod ]]; then
-	CHMOD="/usr/global/bin/chmod"
+    CHMOD="$(which chmod 2>/dev/null)"
+    if [[ ! -x $CHMOD ]]; then
+	CHMOD=
+	if [[ -x /usr/bin/chmod ]]; then
+	    CHMOD="/usr/bin/chmod"
+	elif [[ -x /bin/chmod ]]; then
+	    CHMOD="/bin/chmod"
+	elif [[ -x /usr/local/bin/chmod ]]; then
+	    CHMOD="/usr/local/bin/chmod"
+	elif [[ -x /usr/global/bin/chmod ]]; then
+	    CHMOD="/usr/global/bin/chmod"
+	elif [[ -x $HOME/bin/chmod ]]; then
+	    CHMOD="$HOME/bin/chmod"
+	else
+	    echo "$0: FATAL: using -n and cannot find chmod executable" 1>&2
+	    exit 8
+	fi
     fi
+fi
+if [[ -n "$CHMOD" && -n "$V_FLAG" ]]; then
+    echo "$0: notice: chmod executable: $CHMOD"
 fi
 
 # firewall
@@ -242,82 +345,51 @@ fi
 # must be root with -o
 if [[ -n $O_FLAG && "$(id -u)" -ne 0 ]]; then
     echo "$0: FATAL: must be super-user to use -o" 1>&2
-    exit 3
+    exit 9
 fi
 # -d conflicts with -o, -m and -a
 if [[ -n "$D_FLAG" ]]; then
     if [[ -n "$O_FLAG" ]]; then
 	echo "$0: FATAL: -d conflicts with -o" 1>&2
-	exit 4
+	exit 10
     fi
     if [[ -n "$M_FLAG" ]]; then
 	echo "$0: FATAL: -d conflicts with -m" 1>&2
-	exit 5
+	exit 11
     fi
     if [[ -n "$A_FLAG" ]]; then
 	echo "$0: FATAL: -d conflicts with -a" 1>&2
-	exit 6
+	exit 12
     fi
 fi
 # 1st arg (path_to_clone) must exist
 export INPUT_PATH_ARG="$1"
 if [[ ! -e "$INPUT_PATH_ARG" ]]; then
     echo "$0: FATAL: 1st arg (path_to_clone) does not exist: $INPUT_PATH_ARG" 1>&2
-    exit 7
+    exit 13
 fi
 # we will later create 2nd arg (clone_under)
 export TOP_ARG="$2"
 if [[ $INPUT_PATH_ARG == $TOP_ARG ]]; then
     echo "$0: FATAL: 1st arg (path_to_clone) == 2nd arg (clone_under): $TOP_ARG" 1>&2
-    exit 8
-fi
-# must have dirname
-if [[ -z "$DIRNAME" ]]; then
-    echo "$0: FATAL: cannot find dirname executable" 1>&2
-    exit 9
-fi
-# must have rsync
-if [[ -z "$RSYNC" ]]; then
-    echo "$0: FATAL: cannot find rsync executable" 1>&2
-    exit 10
-fi
-# must have mkdir
-if [[ -z "$MKDIR" ]]; then
-    echo "$0: FATAL: cannot find mkdir executable" 1>&2
-    exit 11
-fi
-# must have stat if -o or -m
-if [[ -n "$O_FLAG" || -n "$M_FLAG" ]]; then
-    if [[ -z "$STAT" ]]; then
-	echo "$0: FATAL: cannot find stat executable" 1>&2
-	exit 12
-    fi
-fi
-# must have chown if -o
-if [[ -n "$O_FLAG" && -z "$CHOWN" ]]; then
-    echo "$0: FATAL: using -o and cannot find chown executable" 1>&2
-    exit 13
-fi
-# must have chmod if -m
-if [[ -n "$M_FLAG" && -z "$CHMOD" ]]; then
-    echo "$0: FATAL: using -n and cannot find chmod executable" 1>&2
     exit 14
 fi
 
-# determine the absolute path of a file
+# determine the canonical absolute path of a file
 #
 # usage:
-#	abspath [path]
+#	canonical_abs_path [path]
 #
 # returns
-#	0
+#	0 all is OK
+#	!= 0 on error
 #
 # stdout
 #	absolute path with symlinks resolved, or empty string on error
 #
 # NOTE: If path is missing or not given, the current working directory is assumed.
 #
-abspath()
+canonical_abs_path()
 {
     # parse args
     #
@@ -327,32 +399,41 @@ abspath()
 	FILENAME="$1"
     fi
 
-    # If we do not have the realpath utility, use python, or P
+    # attempt to use whatever method we can to find the canonical absolute path
     #
+    ANSWER=
     if [[ -n "$REALPATH" ]]; then
-	"$REALPATH" -m -q "$FILENAME" 2>/dev/null
+	ANSWER=$("$REALPATH" -m -q "$FILENAME" 2>/dev/null)
     elif [[ -n "$PYTHON" ]]; then
-	"$PYTHON" -c 'import os,sys; print os.path.realpath(sys.argv[1])' "$FILENAME" 2>/dev/null
-    elif [[ -n "$PWD_BIN" && -n "$BASENAME" ]]; then
+	ANSWER=$("$PYTHON" -c 'import os,sys; print os.path.realpath(sys.argv[1])' "$FILENAME" 2>/dev/null)
+    elif [[ -n "$PWD_BIN" && -n "$BASENAME" && -n "$DIRNAME" ]]; then
 	export PATENT_DIR=$("$DIRNAME" "$FILENAME" 2>/dev/null)
 	if [[ -n "$PATENT_DIR" && -d "$PATENT_DIR" ]]; then
-	    echo "$(cd "$PATENT_DIR"; "$PWD_BIN" -P 2>/dev/null)/$("$BASENAME" "$FILENAME" 2>/dev/null)"
+	    ANSWER=$(cd "$PATENT_DIR"; "$PWD_BIN" -P 2>/dev/null)'/'$("$BASENAME" "$FILENAME" 2>/dev/null)
 	fi
     fi
+
+    # report the answer we may have found
+    #
+    if [[ -z "$ANSWER" ]]; then
+	echo "$0: Warning: no method to determine canonical absolute path: $FILENAME" 1>&2
+	return 1
+    fi
+    echo "$ANSWER"
     return 0
 }
 
 # convert 1st arg (path_to_clone) and verify
 #
-INPUT_PATH=$(abspath "$INPUT_PATH_ARG" 2>/dev/null)
+INPUT_PATH=$(canonical_abs_path "$INPUT_PATH_ARG" 2>/dev/null)
 if [[ -z "$INPUT_PATH" ]]; then
-    echo "$0: FATAL: abspath turned into an empty string, 1st arg (path_to_clone): $INPUT_PATH_ARG" 1>&2
+    echo "$0: FATAL: canonical_abs_path turned into an empty string, 1st arg (path_to_clone): $INPUT_PATH_ARG" 1>&2
     exit 15
 elif [[ $INPUT_PATH == '/' ]]; then
     echo "$0: FATAL: / is not allowed for 1st arg (path_to_clone)" 1>&2
     exit 16
 elif [[ ! $INPUT_PATH =~ ^'/' ]]; then
-    echo "$0: FATAL: abspath did not return a /-based path for 1st arg (path_to_clone): $INPUT_PATH_ARG == $INPUT_PATH" 1>&2
+    echo "$0: FATAL: canonical_abs_path did not return a /-based path for 1st arg (path_to_clone): $INPUT_PATH_ARG == $INPUT_PATH" 1>&2
     exit 17
 elif [[ -n "$V_FLAG" ]]; then
     if [[ $INPUT_PATH_ARG == $INPUT_PATH ]]; then
@@ -368,15 +449,15 @@ fi
 
 # verify and if needed setup 2nd arg (path_to_clone)
 #
-TOP=$(abspath "$TOP_ARG" 2>/dev/null)
+TOP=$(canonical_abs_path "$TOP_ARG" 2>/dev/null)
 if [[ -z "$TOP" ]]; then
-    echo "$0: FATAL: abspath turned into an empty string, 2nd arg (clone_under): $TOP_ARG" 1>&2
+    echo "$0: FATAL: canonical_abs_path turned into an empty string, 2nd arg (clone_under): $TOP_ARG" 1>&2
     exit 19
 elif [[ $TOP == '/' ]]; then
     echo "$0: FATAL: / is not allowed for 2nd arg (clone_under)" 1>&2
     exit 20
 elif [[ ! $TOP =~ ^'/' ]]; then
-    echo "$0: FATAL: abspath did not return a /-based path for 2nd arg (clone_under): $TOP_ARG == $TOP" 1>&2
+    echo "$0: FATAL: canonical_abs_path did not return a /-based path for 2nd arg (clone_under): $TOP_ARG == $TOP" 1>&2
     exit 21
 elif [[ -n "$V_FLAG" ]]; then
     if [[ $TOP_ARG == $TOP ]]; then
@@ -422,7 +503,7 @@ if [[ $TOP/ =~ $INPUT_PATH/ ]]; then
     exit 26
 else
     if [[ -n "$V_FLAG" ]]; then
-	echo "$0: notice: 2nd arg: $TOP is NOT a subdir of 1st arg: $INPUT_PATH"
+	echo "$0: notice: 2nd arg: $TOP is not a subdir of 1st arg: $INPUT_PATH"
     fi
 fi
 
@@ -470,7 +551,7 @@ fi
 #
 # This code section is disabled by -d
 #
-while [[ -n "$DIR" ]]; do
+while [[ -z "$D_FLAG" && -n "$DIR" ]]; do
 
     # set the owner/group if -o and needed
     #
@@ -558,39 +639,43 @@ done
 #
 #    -H		preserve hard links
 #
-#    -v		increase verbosity
-#    -q		suppress non-error messages
-#
 #    -S		handle sparse files efficiently
 #
 #    -0		all *from/filter files are delimited by NUL bytes
 #
 #    -i		output a change-summary for all updates
-#
 #    -h		output numbers in a human-readable format
+#    -v		increase verbosity
+#
+#    -q		suppress non-error messages
+#
+#    --delete	delete extraneous files from dest dirs
 #
 #    -n		show what would have been transferred
 #
+RSYNC_ARGS="-a -H -S -0"
+if [[ -n "$V_FLAG" ]]; then
+    RSYNC_ARGS="$RSYNC_ARGS -i -h -v"
+else
+    RSYNC_ARGS="$RSYNC_ARGS -q"
+fi
+if [[ -z "$K_FLAG" ]]; then
+    RSYNC_ARGS="$RSYNC_ARGS --delete"
+fi
+if [[ -n "$N_FLAG" ]]; then
+    RSYNC_ARGS="$RSYNC_ARGS -n"
+fi
+if [[ -n "$V_FLAG" ]]; then
+    echo "$RSYNC" $RSYNC_ARGS "$INPUT_PATH" "$TOP$DEST_DIR_PARENT"
+fi
 if [[ -z "$N_FLAG" ]]; then
-    if [[ -n "$V_FLAG" ]]; then
-	echo "$RSYNC" -aHvS0ih "$INPUT_PATH" "$TOP$DEST_DIR_PARENT"
-	"$RSYNC" -aHvS0ih "$INPUT_PATH" "$TOP$DEST_DIR_PARENT"
-	status="$?"
-    else
-	"$RSYNC" -aHqS0h "$INPUT_PATH" "$TOP$DEST_DIR_PARENT"
-	status="$?"
-    fi
-elif [[ -n "$V_FLAG" ]]; then
-    echo "$RSYNC" -aHvS0ih -n "$INPUT_PATH" "$TOP$DEST_DIR_PARENT"
-    "$RSYNC" -aHvS0in -n "$INPUT_PATH" "$TOP$DEST_DIR_PARENT"
+    "$RSYNC" $RSYNC_ARGS "$INPUT_PATH" "$TOP$DEST_DIR_PARENT"
+    status="$?"
+else
     status=0
 fi
 if [[ $status -ne 0 ]]; then
-    if [[ -n "$V_FLAG" ]]; then
-	echo "$0: FATAL: $RSYNC -aHvS0ih $INPUT_PATH $TOP$DEST_DIR_PARENT error code: $status" 1>&2
-    else
-	echo "$0: FATAL: $RSYNC -aHqS0h $INPUT_PATH $TOP$DEST_DIR_PARENT error code: $status" 1>&2
-    fi
+    echo "$0: FATAL: $RSYNC $RSYNC_ARGS $INPUT_PATH $TOP$DEST_DIR_PARENT error code: $status" 1>&2
     exit 31
 fi
 
