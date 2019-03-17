@@ -1,0 +1,593 @@
+#!/bin/bash
+#
+# clonepath - clone a path under a directory
+#
+# Copyright (c) 2019 by Landon Curt Noll.  All Rights Reserved.
+#
+# Permission to use, copy, modify, and distribute this software and
+# its documentation for any purpose and without fee is hereby granted,
+# provided that the above copyright, this permission notice and text
+# this comment, and the disclaimer below appear in all of the following:
+#
+#       supporting documentation
+#       source copies
+#       source works derived from this source
+#       binaries derived from this source or from derived source
+#
+# LANDON CURT NOLL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
+# INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO
+# EVENT SHALL LANDON CURT NOLL BE LIABLE FOR ANY SPECIAL, INDIRECT OR
+# CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF
+# USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+# OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+# PERFORMANCE OF THIS SOFTWARE.
+#
+# chongo (Landon Curt Noll, http://www.isthe.com/chongo/index.html) /\oo/\
+#
+# Share and enjoy! :-)
+#
+USAGE="usage: $0 [-v] [-n] [[-o] [-m] [-a] | [-d]] [-h] path_to_clone clone_under
+
+	-v		be verbose (def: be silent except for errors and warnings)
+	-n		no op, do nothing (def: do, kill, remove as needed)
+
+	-o		change ownership of path_to_clone dirs under clone_under (def: do not change)
+			    NOTE: rsync always sets ownership at and below path_to_clone if superuser
+	-m		change permission of path_to_clone dirs under clone_under (def: do not change)
+			    NOTE: rsync always sets permissions at and below path_to_clone
+	-a		clone under absolute canonical path_to_clone (def: clone path_to_clone as is)
+
+	-d		clone directly into clone_under (def: clone to clone_under/path_to_clone)
+			   -d conflicts with -o, -m and -a
+
+	-h		print this message and exit 0
+
+	path_to_clone	clone path_to_clone under the clone_under directory
+	clone_under	top directory under which to clone path_to_clone"
+
+# setup
+#
+export V_FLAG=
+export N_FLAG=
+export O_FLAG=
+export M_FLAG=
+export A_FLAG=
+export D_FLAG=
+
+# parse args
+#
+# getopts is a bsh builtin
+#
+while getopts vnomadh flag; do
+    case "$flag" in
+    v) V_FLAG=true ;;
+    n) N_FLAG=true ;;
+    o) O_FLAG=true ;;
+    m) M_FLAG=true ;;
+    a) A_FLAG=true ;;
+    d) D_FLAG=true ;;
+    h) echo "$USAGE" 1>&2
+       exit 0
+       ;;
+    ?) echo "$0: FATAL: getopts error" 1>&2
+       echo "$USAGE" 1>&2
+       exit 1
+       ;;
+    esac
+done
+shift $(( OPTIND - 1 ));
+if [[ $# -ne 2 ]]; then
+    echo "$0: FATAL: expected 2 args" 1>&2
+    echo "$USAGE" 1>&2
+    exit 2
+fi
+# verbose arg output
+if [[ -n "$V_FLAG" ]]; then
+    echo "$0: notice: flag set: -v"
+    if [[ -n "$N_FLAG" ]]; then
+	echo "$0: notice: flag set: -n"
+    fi
+    if [[ -n "$O_FLAG" ]]; then
+	echo "$0: notice: flag set: -o"
+    fi
+    if [[ -n "$M_FLAG" ]]; then
+	echo "$0: notice: flag set: -m"
+    fi
+    if [[ -n "$A_FLAG" ]]; then
+	echo "$0: notice: flag set: -a"
+    fi
+    if [[ -n "$D_FLAG" ]]; then
+	echo "$0: notice: flag set: -d"
+    fi
+fi
+
+# look for critical binaries
+#
+# We will be very safe and only look for system utilities
+# in standard locations instead of assuming $PATH is setup.
+#
+# No executable is searched along $PATH.  Instead we search
+# for executables as if we have the PATH:
+#
+#	/usr/bin:/bin:/usr/local/bin:/usr/global/bin
+#
+# and for chown:
+#
+#	/usr/sbin:/sbin:/usr/bin:/bin:/usr/local/bin:/usr/global/bin
+#
+# This paranoia helps protect root when it uses this tool.
+#
+export REALPATH=
+if [[ -x /usr/bin/realpath ]]; then
+    REALPATH="/usr/bin/realpath"
+elif [[ -x /bin/realpath ]]; then
+    REALPATH="/bin/realpath"
+elif [[ -x /usr/local/bin/realpath ]]; then
+    REALPATH="/usr/local/bin/realpath"
+elif [[ -x /usr/global/bin/realpath ]]; then
+    REALPATH="/usr/global/bin/realpath"
+fi
+#
+export PYTHON=
+if [[ -x /usr/bin/python ]]; then
+    PYTHON="/usr/bin/python"
+elif [[ -x /bin/python ]]; then
+    PYTHON="/bin/python"
+elif [[ -x /usr/local/bin/python ]]; then
+    PYTHON="/usr/local/bin/python"
+elif [[ -x /usr/global/bin/python ]]; then
+    PYTHON="/usr/global/bin/python"
+fi
+#
+export PWD_BIN=
+if [[ -x /usr/bin/pwd ]]; then
+    PWD_BIN="/usr/bin/pwd"
+elif [[ -x /bin/pwd ]]; then
+    PWD_BIN="/bin/pwd"
+elif [[ -x /usr/local/bin/pwd ]]; then
+    PWD_BIN="/usr/local/bin/pwd"
+elif [[ -x /usr/global/bin/pwd ]]; then
+    PWD_BIN="/usr/global/bin/pwd"
+fi
+#
+export DIRNAME=
+if [[ -x /usr/bin/dirname ]]; then
+    DIRNAME="/usr/bin/dirname"
+elif [[ -x /bin/dirname ]]; then
+    DIRNAME="/bin/dirname"
+elif [[ -x /usr/local/bin/dirname ]]; then
+    DIRNAME="/usr/local/bin/dirname"
+elif [[ -x /usr/global/bin/dirname ]]; then
+    DIRNAME="/usr/global/bin/dirname"
+fi
+#
+export BASENAME=
+if [[ -x /usr/bin/basename ]]; then
+    BASENAME="/usr/bin/basename"
+elif [[ -x /bin/basename ]]; then
+    BASENAME="/bin/basename"
+elif [[ -x /usr/local/bin/basename ]]; then
+    BASENAME="/usr/local/bin/basename"
+elif [[ -x /usr/global/bin/basename ]]; then
+    BASENAME="/usr/global/bin/basename"
+fi
+#
+export RSYNC=
+if [[ -x /usr/bin/rsync ]]; then
+    RSYNC="/usr/bin/rsync"
+elif [[ -x /bin/rsync ]]; then
+    RSYNC="/bin/rsync"
+elif [[ -x /usr/local/bin/rsync ]]; then
+    RSYNC="/usr/local/bin/rsync"
+elif [[ -x /usr/global/bin/rsync ]]; then
+    RSYNC="/usr/global/bin/rsync"
+fi
+#
+export MKDIR=
+if [[ -x /usr/bin/mkdir ]]; then
+    MKDIR="/usr/bin/mkdir"
+elif [[ -x /bin/mkdir ]]; then
+    MKDIR="/bin/mkdir"
+elif [[ -x /usr/local/bin/mkdir ]]; then
+    MKDIR="/usr/local/bin/mkdir"
+elif [[ -x /usr/global/bin/mkdir ]]; then
+    MKDIR="/usr/global/bin/mkdir"
+fi
+#
+export STAT=
+if [[ -n "$O_FLAG" || -n "$M_FLAG" ]]; then
+    if [[ -x /usr/bin/stat ]]; then
+	STAT="/usr/bin/stat"
+    elif [[ -x /bin/stat ]]; then
+	STAT="/bin/stat"
+    elif [[ -x /usr/local/bin/stat ]]; then
+	STAT="/usr/local/bin/stat"
+    elif [[ -x /usr/global/bin/stat ]]; then
+	STAT="/usr/global/bin/stat"
+    fi
+fi
+#
+export CHOWN=
+if [[ -n "$O_FLAG" ]]; then
+    if [[ -x /usr/sbin/chown ]]; then
+	CHOWN="/usr/sbin/chown"
+    elif [[ -x /sbin/chown ]]; then
+	CHOWN="/sbin/chown"
+    elif [[ -x /usr/bin/chown ]]; then
+	CHOWN="/usr/bin/chown"
+    elif [[ -x /bin/chown ]]; then
+	CHOWN="/bin/chown"
+    elif [[ -x /usr/local/bin/chown ]]; then
+	CHOWN="/usr/local/bin/chown"
+    elif [[ -x /usr/global/bin/chown ]]; then
+	CHOWN="/usr/global/bin/chown"
+    fi
+fi
+#
+export CHMOD=
+if [[ -n "$M_FLAG" ]]; then
+    if [[ -x /usr/bin/chmod ]]; then
+	CHMOD="/usr/bin/chmod"
+    elif [[ -x /bin/chmod ]]; then
+	CHMOD="/bin/chmod"
+    elif [[ -x /usr/local/bin/chmod ]]; then
+	CHMOD="/usr/local/bin/chmod"
+    elif [[ -x /usr/global/bin/chmod ]]; then
+	CHMOD="/usr/global/bin/chmod"
+    fi
+fi
+
+# firewall
+#
+# must be root with -o
+if [[ -n $O_FLAG && "$(id -u)" -ne 0 ]]; then
+    echo "$0: FATAL: must be super-user to use -o" 1>&2
+    exit 3
+fi
+# -d conflicts with -o, -m and -a
+if [[ -n "$D_FLAG" ]]; then
+    if [[ -n "$O_FLAG" ]]; then
+	echo "$0: FATAL: -d conflicts with -o" 1>&2
+	exit 4
+    fi
+    if [[ -n "$M_FLAG" ]]; then
+	echo "$0: FATAL: -d conflicts with -m" 1>&2
+	exit 5
+    fi
+    if [[ -n "$A_FLAG" ]]; then
+	echo "$0: FATAL: -d conflicts with -a" 1>&2
+	exit 6
+    fi
+fi
+# 1st arg (path_to_clone) must exist
+export INPUT_PATH_ARG="$1"
+if [[ ! -e "$INPUT_PATH_ARG" ]]; then
+    echo "$0: FATAL: 1st arg (path_to_clone) does not exist: $INPUT_PATH_ARG" 1>&2
+    exit 7
+fi
+# we will later create 2nd arg (clone_under)
+export TOP_ARG="$2"
+if [[ $INPUT_PATH_ARG == $TOP_ARG ]]; then
+    echo "$0: FATAL: 1st arg (path_to_clone) == 2nd arg (clone_under): $TOP_ARG" 1>&2
+    exit 8
+fi
+# must have dirname
+if [[ -z "$DIRNAME" ]]; then
+    echo "$0: FATAL: cannot find dirname executable" 1>&2
+    exit 9
+fi
+# must have rsync
+if [[ -z "$RSYNC" ]]; then
+    echo "$0: FATAL: cannot find rsync executable" 1>&2
+    exit 10
+fi
+# must have mkdir
+if [[ -z "$MKDIR" ]]; then
+    echo "$0: FATAL: cannot find mkdir executable" 1>&2
+    exit 11
+fi
+# must have stat if -o or -m
+if [[ -n "$O_FLAG" || -n "$M_FLAG" ]]; then
+    if [[ -z "$STAT" ]]; then
+	echo "$0: FATAL: cannot find stat executable" 1>&2
+	exit 12
+    fi
+fi
+# must have chown if -o
+if [[ -n "$O_FLAG" && -z "$CHOWN" ]]; then
+    echo "$0: FATAL: using -o and cannot find chown executable" 1>&2
+    exit 13
+fi
+# must have chmod if -m
+if [[ -n "$M_FLAG" && -z "$CHMOD" ]]; then
+    echo "$0: FATAL: using -n and cannot find chmod executable" 1>&2
+    exit 14
+fi
+
+# determine the absolute path of a file
+#
+# usage:
+#	abspath [path]
+#
+# returns
+#	0
+#
+# stdout
+#	absolute path with symlinks resolved, or empty string on error
+#
+# NOTE: If path is missing or not given, the current working directory is assumed.
+#
+abspath()
+{
+    # parse args
+    #
+    if [[ $# -eq 0 ]]; then
+	FILENAME="$PWD"
+    else
+	FILENAME="$1"
+    fi
+
+    # If we do not have the realpath utility, use python, or P
+    #
+    if [[ -n "$REALPATH" ]]; then
+	"$REALPATH" -m -q "$FILENAME" 2>/dev/null
+    elif [[ -n "$PYTHON" ]]; then
+	"$PYTHON" -c 'import os,sys; print os.path.realpath(sys.argv[1])' "$FILENAME" 2>/dev/null
+    elif [[ -n "$PWD_BIN" && -n "$BASENAME" ]]; then
+	export PATENT_DIR=$("$DIRNAME" "$FILENAME" 2>/dev/null)
+	if [[ -n "$PATENT_DIR" && -d "$PATENT_DIR" ]]; then
+	    echo "$(cd "$PATENT_DIR"; "$PWD_BIN" -P 2>/dev/null)/$("$BASENAME" "$FILENAME" 2>/dev/null)"
+	fi
+    fi
+    return 0
+}
+
+# convert 1st arg (path_to_clone) and verify
+#
+INPUT_PATH=$(abspath "$INPUT_PATH_ARG" 2>/dev/null)
+if [[ -z "$INPUT_PATH" ]]; then
+    echo "$0: FATAL: abspath turned into an empty string, 1st arg (path_to_clone): $INPUT_PATH_ARG" 1>&2
+    exit 15
+elif [[ ! $INPUT_PATH =~ ^'/' ]]; then
+    echo "$0: FATAL: abspath did not return a /-based path for 1st arg (path_to_clone): $INPUT_PATH_ARG == $INPUT_PATH" 1>&2
+    exit 16
+elif [[ -n "$V_FLAG" ]]; then
+    if [[ $INPUT_PATH_ARG == $INPUT_PATH ]]; then
+	echo "$0: notice: absolute 1st arg (path_to_clone): $INPUT_PATH"
+    else
+	echo "$0: notice: 1st arg (path_to_clone): $INPUT_PATH_ARG == $INPUT_PATH"
+    fi
+fi
+if [[ ! -e "$INPUT_PATH" ]]; then
+    echo "$0: FATAL: 1st arg (path_to_clone) does not exist: $INPUT_PATH_ARG = $INPUT_PATH" 1>&2
+    exit 17
+fi
+
+# verify and if needed setup 2nd arg (path_to_clone)
+#
+TOP=$(abspath "$TOP_ARG" 2>/dev/null)
+if [[ -z "$TOP" ]]; then
+    echo "$0: FATAL: abspath turned into an empty string, 2nd arg (clone_under): $TOP_ARG" 1>&2
+    exit 18
+elif [[ ! $TOP =~ ^'/' ]]; then
+    echo "$0: FATAL: abspath did not return a /-based path for 2nd arg (clone_under): $TOP_ARG == $TOP" 1>&2
+    exit 19
+elif [[ -n "$V_FLAG" ]]; then
+    if [[ $TOP_ARG == $TOP ]]; then
+	echo "$0: notice: absolute 2nd arg (clone_under): $TOP_ARG"
+    else
+	echo "$0: notice: 2nd arg (clone_under): $TOP_ARG == $TOP"
+    fi
+fi
+if [[ ! -e "$TOP" ]]; then
+    if [[ -z "$N_FLAG" ]]; then
+	if [[ -n "$V_FLAG" ]]; then
+	    echo "$MKDIR" -p -v "$TOP"
+	    "$MKDIR" -p -v "$TOP"
+	    status="$?"
+	else
+	    "$MKDIR" -p "$TOP"
+	    status="$?"
+	fi
+	if [[ $status -ne 0 ]]; then
+	    echo "$0: FATAL: cannot make 2nd arg (clone_under) directory: $TOP_ARG = $TOP" 1>&2
+	    exit 20
+	fi
+    elif [[ -n "$V_FLAG" ]]; then
+	echo "$MKDIR" -p -v "$TOP"
+    fi
+elif [[ ! -d "$TOP" ]]; then
+    echo "$0: FATAL: 2nd arg (clone_under) exists but is not a directory: $TOP_ARG = $TOP" 1>&2
+    exit 21
+fi
+if [[ -z "$N_FLAG" && ! -d "$TOP" ]]; then
+    echo "$0: FATAL: unable to create 2nd arg (clone_under) directory: $TOP_ARG = $TOP" 1>&2
+    exit 22
+fi
+if [[ $INPUT_PATH == $TOP ]]; then
+    echo "$0: FATAL: 1st arg (path_to_clone) == 2nd arg (clone_under): $TOP_ARG = $TOP" 1>&2
+    exit 23
+fi
+
+# avoid infinite recusion, do not let 2nd arg (clone_under) be a sub-directory of 1st arg (path_to_clone)
+#
+if [[ $TOP/ =~ $INPUT_PATH/ ]]; then
+    echo "$0: FATAL: cloning $INPUT_PATH under: $TOP would be an infinitely recursive copy" 1>&2
+    exit 24
+else
+    if [[ -n "$V_FLAG" ]]; then
+	echo "$0: notice: 2nd arg: $TOP is NOT a subdir of 1st arg: $INPUT_PATH"
+    fi
+fi
+
+# if needed, create input path under TOP
+#
+if [[ -z "$D_FLAG" ]]; then
+    # no -d processing
+    #
+    if [[ -z "$A_FLAG" ]]; then
+	export DEST_DIR="$INPUT_PATH_ARG"
+    else
+	export DEST_DIR="$INPUT_PATH"
+    fi
+    export DEST_DIR_PARENT=$("$DIRNAME" "$DEST_DIR")
+    export DIR="$DEST_DIR_PARENT"
+    if [[ ! -e "$TOP$DIR" ]]; then
+	if [[ -z "$N_FLAG" ]]; then
+	    if [[ -n "$V_FLAG" ]]; then
+		echo "$MKDIR" -p -v "$TOP$DIR"
+		"$MKDIR" -p -v "$TOP$DIR"
+		status="$?"
+	    else
+		"$MKDIR" -p "$TOP$DIR"
+		status="$?"
+	    fi
+	    if [[ $status -ne 0 ]]; then
+		echo "$0: FATAL: cannot make input path: $TOP$DIR" 1>&2
+		exit 25
+	    fi
+	elif [[ -n "$V_FLAG" ]]; then
+	    echo "$MKDIR" -p -v "$TOP$DIR"
+	fi
+    elif [[ ! -d "$TOP$DIR" ]]; then
+	echo "$0: FATAL: input path exists but is not a directory: $TOP$DIR" 1>&2
+	exit 26
+    fi
+else
+    # -d processing
+    #
+    export DEST_DIR_PARENT=""
+    export DIR=""
+fi
+
+# be sure the ownership and permissions of the input path under TOP is currect
+#
+# This code section is disabled by -d
+#
+while [[ -n "$DIR" ]]; do
+
+    # set the owner/group if -o and needed
+    #
+    if [[ -n "$O_FLAG" ]]; then
+	if [[ -n "$V_FLAG" ]]; then
+	    echo "$0: notice: validating ownership of the input path: $DIR"
+	fi
+	SRC_OWNER_GROUP=$("$STAT" -f '%u:%g' "$DIR" 2>/dev/null)
+	DEST_OWNER_GROUP=$("$STAT" -f '%u:%g' "$TOP$DIR" 2>/dev/null)
+	if [[ $SRC_OWNER_GROUP != $DEST_OWNER_GROUP ]]; then
+	    if [[ -z "$N_FLAG" ]]; then
+		if [[ -n "$V_FLAG" ]]; then
+		    echo "$CHOWN" -v "$SRC_OWNER_GROUP" "$TOP$DIR"
+		    "$CHOWN" -v "$SRC_OWNER_GROUP" "$TOP$DIR"
+		else
+		    "$CHOWN" "$SRC_OWNER_GROUP" "$TOP$DIR"
+		fi
+	    elif [[ -n "$V_FLAG" ]]; then
+		echo "$CHOWN" -v "$SRC_OWNER_GROUP" "$TOP$DIR"
+	    else
+		status=0
+	    fi
+	    if [[ $status -ne 0 ]]; then
+		echo "$0: FATAL: $CHOWN $SRC_OWNER_GROUP $TOP$DIR error code: $status" 1>&2
+		exit 27
+	    fi
+	elif [[ -n "$V_FLAG" ]]; then
+	    echo "$0: notice: correct owner:group $SRC_OWNER_GROUP for $TOP$DIR"
+	fi
+    fi
+
+    # set permission if needed
+    #
+    if [[ -n "$M_FLAG" ]]; then
+	if [[ -n "$V_FLAG" ]]; then
+	    echo "$0: notice: validating permissin of the input path: $DIR"
+	fi
+	SRC_OWNER_MODE=$("$STAT" -f '%p' "$DIR" 2>/dev/null)
+	DEST_OWNER_MODE=$("$STAT" -f '%p' "$TOP$DIR" 2>/dev/null)
+	if [[ $SRC_OWNER_MODE != $DEST_OWNER_MODE ]]; then
+	    if [[ -z "$N_FLAG" ]]; then
+		if [[ -n "$V_FLAG" ]]; then
+		    echo "$CHMOD" -v "$SRC_OWNER_MODE" "$TOP$DIR"
+		    "$CHMOD" -v "$SRC_OWNER_MODE" "$TOP$DIR"
+		else
+		    "$CHMOD" "$SRC_OWNER_MODE" "$TOP$DIR"
+		fi
+	    elif [[ -n "$V_FLAG" ]]; then
+		echo "$CHMOD" -v "$SRC_OWNER_MODE" "$TOP$DIR"
+	    else
+		status=0
+	    fi
+	    if [[ $status -ne 0 ]]; then
+		echo "$0: FATAL: $CHMOD $SRC_OWNER_MODE $TOP$DIR error code: $status" 1>&2
+		exit 28
+	    fi
+	elif [[ -n "$V_FLAG" ]]; then
+	    echo "$0: notice: correct mode $SRC_OWNER_MODE for $TOP$DIR"
+	fi
+    fi
+
+    # move up a directory if not /
+    #
+    if [[ "$DIR" != "/" ]]; then
+	DIR=$("$DIRNAME" $DIR)
+    else
+	break
+    fi
+done
+
+# clone input path under top
+#
+# rsync arg review:
+#
+#    -a 	archive mode, same as: -rlptgoD
+#	-r	    recurse into directories
+#	-l	    copy symlinks as symlinks
+#	-p	    preserve permissions
+#	-t	    preserve times
+#	-g	    preserve group
+#	-o	    preserve owner (ignored if not super-user)
+#	-D	    same as: --devices --specials
+#			--devices	preserve device files (ignored if not super-user)
+#			--specials	preserve special files
+#
+#    -H		preserve hard links
+#
+#    -v		increase verbosity
+#    -q		suppress non-error messages
+#
+#    -S		handle sparse files efficiently
+#
+#    -0		all *from/filter files are delimited by NUL bytes
+#
+#    -i		output a change-summary for all updates
+#
+#    -h		output numbers in a human-readable format
+#
+#    -n		show what would have been transferred
+#
+if [[ -z "$N_FLAG" ]]; then
+    if [[ -n "$V_FLAG" ]]; then
+	echo "$RSYNC" -aHvS0ih "$INPUT_PATH" "$TOP$DEST_DIR_PARENT"
+	"$RSYNC" -aHvS0ih "$INPUT_PATH" "$TOP$DEST_DIR_PARENT"
+	status="$?"
+    else
+	"$RSYNC" -aHqS0h "$INPUT_PATH" "$TOP$DEST_DIR_PARENT"
+	status="$?"
+    fi
+elif [[ -n "$V_FLAG" ]]; then
+    echo "$RSYNC" -aHvS0ih -n "$INPUT_PATH" "$TOP$DEST_DIR_PARENT"
+    "$RSYNC" -aHvS0in -n "$INPUT_PATH" "$TOP$DEST_DIR_PARENT"
+    status=0
+fi
+if [[ $status -ne 0 ]]; then
+    if [[ -n "$V_FLAG" ]]; then
+	echo "$0: FATAL: $RSYNC -aHvS0ih $INPUT_PATH $TOP$DEST_DIR_PARENT error code: $status" 1>&2
+    else
+	echo "$0: FATAL: $RSYNC -aHqS0h $INPUT_PATH $TOP$DEST_DIR_PARENT error code: $status" 1>&2
+    fi
+    exit 29
+fi
+
+# All Done!!! --  Jessica Noll, Age 2
+#
+exit 0
