@@ -348,9 +348,12 @@ INPUT_PATH=$(abspath "$INPUT_PATH_ARG" 2>/dev/null)
 if [[ -z "$INPUT_PATH" ]]; then
     echo "$0: FATAL: abspath turned into an empty string, 1st arg (path_to_clone): $INPUT_PATH_ARG" 1>&2
     exit 15
+elif [[ $INPUT_PATH == '/' ]]; then
+    echo "$0: FATAL: / is not allowed for 1st arg (path_to_clone)" 1>&2
+    exit 16
 elif [[ ! $INPUT_PATH =~ ^'/' ]]; then
     echo "$0: FATAL: abspath did not return a /-based path for 1st arg (path_to_clone): $INPUT_PATH_ARG == $INPUT_PATH" 1>&2
-    exit 16
+    exit 17
 elif [[ -n "$V_FLAG" ]]; then
     if [[ $INPUT_PATH_ARG == $INPUT_PATH ]]; then
 	echo "$0: notice: absolute 1st arg (path_to_clone): $INPUT_PATH"
@@ -360,7 +363,7 @@ elif [[ -n "$V_FLAG" ]]; then
 fi
 if [[ ! -e "$INPUT_PATH" ]]; then
     echo "$0: FATAL: 1st arg (path_to_clone) does not exist: $INPUT_PATH_ARG = $INPUT_PATH" 1>&2
-    exit 17
+    exit 18
 fi
 
 # verify and if needed setup 2nd arg (path_to_clone)
@@ -368,10 +371,13 @@ fi
 TOP=$(abspath "$TOP_ARG" 2>/dev/null)
 if [[ -z "$TOP" ]]; then
     echo "$0: FATAL: abspath turned into an empty string, 2nd arg (clone_under): $TOP_ARG" 1>&2
-    exit 18
+    exit 19
+elif [[ $TOP == '/' ]]; then
+    echo "$0: FATAL: / is not allowed for 2nd arg (clone_under)" 1>&2
+    exit 20
 elif [[ ! $TOP =~ ^'/' ]]; then
     echo "$0: FATAL: abspath did not return a /-based path for 2nd arg (clone_under): $TOP_ARG == $TOP" 1>&2
-    exit 19
+    exit 21
 elif [[ -n "$V_FLAG" ]]; then
     if [[ $TOP_ARG == $TOP ]]; then
 	echo "$0: notice: absolute 2nd arg (clone_under): $TOP_ARG"
@@ -391,29 +397,29 @@ if [[ ! -e "$TOP" ]]; then
 	fi
 	if [[ $status -ne 0 ]]; then
 	    echo "$0: FATAL: cannot make 2nd arg (clone_under) directory: $TOP_ARG = $TOP" 1>&2
-	    exit 20
+	    exit 22
 	fi
     elif [[ -n "$V_FLAG" ]]; then
 	echo "$MKDIR" -p -v "$TOP"
     fi
 elif [[ ! -d "$TOP" ]]; then
     echo "$0: FATAL: 2nd arg (clone_under) exists but is not a directory: $TOP_ARG = $TOP" 1>&2
-    exit 21
+    exit 23
 fi
 if [[ -z "$N_FLAG" && ! -d "$TOP" ]]; then
     echo "$0: FATAL: unable to create 2nd arg (clone_under) directory: $TOP_ARG = $TOP" 1>&2
-    exit 22
+    exit 24
 fi
-if [[ $INPUT_PATH == $TOP ]]; then
-    echo "$0: FATAL: 1st arg (path_to_clone) == 2nd arg (clone_under): $TOP_ARG = $TOP" 1>&2
-    exit 23
+if [[ $INPUT_PATH == $TOP || $INPUT_PATH -ef $TOP ]]; then
+    echo "$0: FATAL: 1st arg (path_to_clone) $INPUT_PATH_ARG = $INPUT_PATH == 2nd arg (clone_under): $TOP_ARG = $TOP" 1>&2
+    exit 25
 fi
 
 # avoid infinite recusion, do not let 2nd arg (clone_under) be a sub-directory of 1st arg (path_to_clone)
 #
 if [[ $TOP/ =~ $INPUT_PATH/ ]]; then
     echo "$0: FATAL: cloning $INPUT_PATH under: $TOP would be an infinitely recursive copy" 1>&2
-    exit 24
+    exit 26
 else
     if [[ -n "$V_FLAG" ]]; then
 	echo "$0: notice: 2nd arg: $TOP is NOT a subdir of 1st arg: $INPUT_PATH"
@@ -444,14 +450,14 @@ if [[ -z "$D_FLAG" ]]; then
 	    fi
 	    if [[ $status -ne 0 ]]; then
 		echo "$0: FATAL: cannot make input path: $TOP$DIR" 1>&2
-		exit 25
+		exit 27
 	    fi
 	elif [[ -n "$V_FLAG" ]]; then
 	    echo "$MKDIR" -p -v "$TOP$DIR"
 	fi
     elif [[ ! -d "$TOP$DIR" ]]; then
 	echo "$0: FATAL: input path exists but is not a directory: $TOP$DIR" 1>&2
-	exit 26
+	exit 28
     fi
 else
     # -d processing
@@ -489,7 +495,7 @@ while [[ -n "$DIR" ]]; do
 	    fi
 	    if [[ $status -ne 0 ]]; then
 		echo "$0: FATAL: $CHOWN $SRC_OWNER_GROUP $TOP$DIR error code: $status" 1>&2
-		exit 27
+		exit 29
 	    fi
 	elif [[ -n "$V_FLAG" ]]; then
 	    echo "$0: notice: correct owner:group $SRC_OWNER_GROUP for $TOP$DIR"
@@ -519,7 +525,7 @@ while [[ -n "$DIR" ]]; do
 	    fi
 	    if [[ $status -ne 0 ]]; then
 		echo "$0: FATAL: $CHMOD $SRC_OWNER_MODE $TOP$DIR error code: $status" 1>&2
-		exit 28
+		exit 30
 	    fi
 	elif [[ -n "$V_FLAG" ]]; then
 	    echo "$0: notice: correct mode $SRC_OWNER_MODE for $TOP$DIR"
@@ -585,7 +591,7 @@ if [[ $status -ne 0 ]]; then
     else
 	echo "$0: FATAL: $RSYNC -aHqS0h $INPUT_PATH $TOP$DEST_DIR_PARENT error code: $status" 1>&2
     fi
-    exit 29
+    exit 31
 fi
 
 # All Done!!! --  Jessica Noll, Age 2
