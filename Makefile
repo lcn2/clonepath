@@ -31,6 +31,7 @@ SHELL= /bin/bash
 
 INSTALL= install
 
+GDESTDIR= /usr/global/bin
 DESTDIR= /usr/local/bin
 
 TARGETS= clonepath
@@ -45,4 +46,10 @@ clean quick_clean quick_distclean distclean:
 clobber quick_clobber: clean
 
 install: all
-	${INSTALL} -m 0555 ${TARGETS} ${DESTDIR}
+	@if [[ -d "${GDESTDIR}" ]]; then \
+	    echo ${INSTALL} -m 0555 ${TARGETS} ${GDESTDIR}; \
+	    ${INSTALL} -m 0555 ${TARGETS} ${GDESTDIR}; \
+	else \
+	    echo ${INSTALL} -m 0555 ${TARGETS} ${DESTDIR}; \
+	    ${INSTALL} -m 0555 ${TARGETS} ${DESTDIR}; \
+	fi
