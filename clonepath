@@ -26,8 +26,8 @@
 #
 # Share and enjoy! :-)
 #
-export VERSION="20190317-0.9.2"
-USAGE="usage: $0 [-v] [-n] [[-o] [-m] [-a] | [-d]] [-k] [-h] /path/2/clone /clone/under
+export VERSION="20190317-0.9.3"
+USAGE="usage: clonepath [-v] [-n] [[-o] [-m] [-a] | [-d]] [-k] [-h] /path/2/clone /clone/under
 
 	-v	be verbose (def: be silent except for errors and warnings)
 
@@ -39,8 +39,8 @@ USAGE="usage: $0 [-v] [-n] [[-o] [-m] [-a] | [-d]] [-k] [-h] /path/2/clone /clon
 	-m	change permission of dirs from /clone/under thru /clone/under/path/2 (def: do not change)
 		    NOTE: rsync always sets permissions at and below /clone/under/path/2/clone
 
-	-a	clone under the absolute canonical path of /path/2/clone (def: clone /path/2/clone as is)
-		    NOTE: with -o and/or -a, ownership and/or permissions at and below /clone/under are set
+	-a	clone using absolute canonical path of /path/2/clone (def: clone /path/2/clone as is)
+		    NOTE: when combined with -o and/or -a and will change dirs at and below /clone/under
 
 	-d	clone directly into /clone/under (def: clone into /clone/under/path/2/clone)
 		   -d conflicts with -o, -m and -a
