@@ -26,18 +26,19 @@
 #
 # Share and enjoy! :-)
 #
-USAGE="usage: $0 [-v] [-n] [[-o] [-m] [-a] | [-d]] [-k] [-h] path_to_clone clone_under
+export VERSION="20190319-0.9"
+USAGE="usage: $0 [-v] [-n] [[-o] [-m] [-a] | [-d]] [-k] [-h] /path/2/clone /clone/under
 
 	-v		be verbose (def: be silent except for errors and warnings)
 	-n		no op, do nothing (def: do, kill, remove as needed)
 
-	-o		change ownership of path_to_clone dirs under clone_under (def: do not change)
-			    NOTE: rsync always sets ownership at and below path_to_clone if superuser
-	-m		change permission of path_to_clone dirs under clone_under (def: do not change)
-			    NOTE: rsync always sets permissions at and below path_to_clone
-	-a		clone under absolute canonical path_to_clone (def: clone path_to_clone as is)
+	-o		change ownership of /path/2/clone dirs under /clone/under (def: do not change)
+			    NOTE: rsync always sets ownership at and below /path/2/clone if superuser
+	-m		change permission of /path/2/clone dirs under /clone/under (def: do not change)
+			    NOTE: rsync always sets permissions at and below /path/2/clone
+	-a		clone under absolute canonical path of /path/2/clone (def: clone /path/2/clone as is)
 
-	-d		clone directly into clone_under (def: clone to clone_under/path_to_clone)
+	-d		clone directly into /clone/under (def: clone into /clone/under/path/2/clone)
 			   -d conflicts with -o, -m and -a
 
 	-k		keep files and dirs found in target that are not found in source (def: delete them)
@@ -45,8 +46,10 @@ USAGE="usage: $0 [-v] [-n] [[-o] [-m] [-a] | [-d]] [-k] [-h] path_to_clone clone
 
 	-h		print this message and exit 0
 
-	path_to_clone	clone path_to_clone under the clone_under directory
-	clone_under	top directory under which to clone path_to_clone"
+	/path/2/clone	clone /path/2/clone under the /clone/under directory
+	/clone/under	top directory under which to clone /path/2/clone
+
+	Version: $VERSION"
 
 # setup
 #
@@ -88,6 +91,7 @@ if [[ $# -ne 2 ]]; then
 fi
 # verbose arg output
 if [[ -n "$V_FLAG" ]]; then
+    echo "$0: notice: Version: $VERSION"
     echo "$0: notice: flag set: -v"
     if [[ -n "$N_FLAG" ]]; then
 	echo "$0: notice: flag set: -n"
@@ -362,16 +366,16 @@ if [[ -n "$D_FLAG" ]]; then
 	exit 12
     fi
 fi
-# 1st arg (path_to_clone) must exist
+# 1st arg (/path/2/clone) must exist
 export INPUT_PATH_ARG="$1"
 if [[ ! -e "$INPUT_PATH_ARG" ]]; then
-    echo "$0: FATAL: 1st arg (path_to_clone) does not exist: $INPUT_PATH_ARG" 1>&2
+    echo "$0: FATAL: 1st arg (/path/2/clone) does not exist: $INPUT_PATH_ARG" 1>&2
     exit 13
 fi
-# we will later create 2nd arg (clone_under)
+# we will later create 2nd arg (/clone/under)
 export TOP_ARG="$2"
 if [[ $INPUT_PATH_ARG == $TOP_ARG ]]; then
-    echo "$0: FATAL: 1st arg (path_to_clone) == 2nd arg (clone_under): $TOP_ARG" 1>&2
+    echo "$0: FATAL: 1st arg (/path/2/clone) == 2nd arg (/clone/under): $TOP_ARG" 1>&2
     exit 14
 fi
 
@@ -423,47 +427,47 @@ canonical_abs_path()
     return 0
 }
 
-# convert 1st arg (path_to_clone) and verify
+# convert 1st arg (/path/2/clone) and verify
 #
 INPUT_PATH=$(canonical_abs_path "$INPUT_PATH_ARG" 2>/dev/null)
 if [[ -z "$INPUT_PATH" ]]; then
-    echo "$0: FATAL: canonical_abs_path turned into an empty string, 1st arg (path_to_clone): $INPUT_PATH_ARG" 1>&2
+    echo "$0: FATAL: canonical_abs_path turned into an empty string, 1st arg (/path/2/clone): $INPUT_PATH_ARG" 1>&2
     exit 15
 elif [[ $INPUT_PATH == '/' ]]; then
-    echo "$0: FATAL: / is not allowed for 1st arg (path_to_clone)" 1>&2
+    echo "$0: FATAL: / is not allowed for 1st arg (/path/2/clone)" 1>&2
     exit 16
 elif [[ ! $INPUT_PATH =~ ^'/' ]]; then
-    echo "$0: FATAL: canonical_abs_path did not return a /-based path for 1st arg (path_to_clone): $INPUT_PATH_ARG == $INPUT_PATH" 1>&2
+    echo "$0: FATAL: canonical_abs_path did not return a /-based path for 1st arg (/path/2/clone): $INPUT_PATH_ARG == $INPUT_PATH" 1>&2
     exit 17
 elif [[ -n "$V_FLAG" ]]; then
     if [[ $INPUT_PATH_ARG == $INPUT_PATH ]]; then
-	echo "$0: notice: absolute 1st arg (path_to_clone): $INPUT_PATH"
+	echo "$0: notice: absolute 1st arg (/path/2/clone): $INPUT_PATH"
     else
-	echo "$0: notice: 1st arg (path_to_clone): $INPUT_PATH_ARG == $INPUT_PATH"
+	echo "$0: notice: 1st arg (/path/2/clone): $INPUT_PATH_ARG == $INPUT_PATH"
     fi
 fi
 if [[ ! -e "$INPUT_PATH" ]]; then
-    echo "$0: FATAL: 1st arg (path_to_clone) does not exist: $INPUT_PATH_ARG = $INPUT_PATH" 1>&2
+    echo "$0: FATAL: 1st arg (/path/2/clone) does not exist: $INPUT_PATH_ARG = $INPUT_PATH" 1>&2
     exit 18
 fi
 
-# verify and if needed setup 2nd arg (path_to_clone)
+# verify and if needed setup 2nd arg (/path/2/clone)
 #
 TOP=$(canonical_abs_path "$TOP_ARG" 2>/dev/null)
 if [[ -z "$TOP" ]]; then
-    echo "$0: FATAL: canonical_abs_path turned into an empty string, 2nd arg (clone_under): $TOP_ARG" 1>&2
+    echo "$0: FATAL: canonical_abs_path turned into an empty string, 2nd arg (/clone/under): $TOP_ARG" 1>&2
     exit 19
 elif [[ $TOP == '/' ]]; then
-    echo "$0: FATAL: / is not allowed for 2nd arg (clone_under)" 1>&2
+    echo "$0: FATAL: / is not allowed for 2nd arg (/clone/under)" 1>&2
     exit 20
 elif [[ ! $TOP =~ ^'/' ]]; then
-    echo "$0: FATAL: canonical_abs_path did not return a /-based path for 2nd arg (clone_under): $TOP_ARG == $TOP" 1>&2
+    echo "$0: FATAL: canonical_abs_path did not return a /-based path for 2nd arg (/clone/under): $TOP_ARG == $TOP" 1>&2
     exit 21
 elif [[ -n "$V_FLAG" ]]; then
     if [[ $TOP_ARG == $TOP ]]; then
-	echo "$0: notice: absolute 2nd arg (clone_under): $TOP_ARG"
+	echo "$0: notice: absolute 2nd arg (/clone/under): $TOP_ARG"
     else
-	echo "$0: notice: 2nd arg (clone_under): $TOP_ARG == $TOP"
+	echo "$0: notice: 2nd arg (/clone/under): $TOP_ARG == $TOP"
     fi
 fi
 if [[ ! -e "$TOP" ]]; then
@@ -477,26 +481,26 @@ if [[ ! -e "$TOP" ]]; then
 	    status="$?"
 	fi
 	if [[ $status -ne 0 ]]; then
-	    echo "$0: FATAL: cannot make 2nd arg (clone_under) directory: $TOP_ARG = $TOP" 1>&2
+	    echo "$0: FATAL: cannot make 2nd arg (/clone/under) directory: $TOP_ARG = $TOP" 1>&2
 	    exit 22
 	fi
     elif [[ -n "$V_FLAG" ]]; then
 	echo "$MKDIR" -p -v "$TOP"
     fi
 elif [[ ! -d "$TOP" ]]; then
-    echo "$0: FATAL: 2nd arg (clone_under) exists but is not a directory: $TOP_ARG = $TOP" 1>&2
+    echo "$0: FATAL: 2nd arg (/clone/under) exists but is not a directory: $TOP_ARG = $TOP" 1>&2
     exit 23
 fi
 if [[ -z "$N_FLAG" && ! -d "$TOP" ]]; then
-    echo "$0: FATAL: unable to create 2nd arg (clone_under) directory: $TOP_ARG = $TOP" 1>&2
+    echo "$0: FATAL: unable to create 2nd arg (/clone/under) directory: $TOP_ARG = $TOP" 1>&2
     exit 24
 fi
 if [[ $INPUT_PATH == $TOP || $INPUT_PATH -ef $TOP ]]; then
-    echo "$0: FATAL: 1st arg (path_to_clone) $INPUT_PATH_ARG = $INPUT_PATH == 2nd arg (clone_under): $TOP_ARG = $TOP" 1>&2
+    echo "$0: FATAL: 1st arg (/path/2/clone) $INPUT_PATH_ARG = $INPUT_PATH == 2nd arg (/clone/under): $TOP_ARG = $TOP" 1>&2
     exit 25
 fi
 
-# avoid infinite recusion, do not let 2nd arg (clone_under) be a sub-directory of 1st arg (path_to_clone)
+# avoid infinite recusion, do not let 2nd arg (/clone/under) be a sub-directory of 1st arg (/path/2/clone)
 #
 if [[ $TOP/ =~ $INPUT_PATH/ ]]; then
     echo "$0: FATAL: cloning $INPUT_PATH under: $TOP would be an infinitely recursive copy" 1>&2
