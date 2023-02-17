@@ -1,8 +1,8 @@
-#!/bin/make
+#!/usr/bin/env make
 #
 # clonepath - clone a path under a directory
 #
-# Copyright (c) 2019 by Landon Curt Noll.  All Rights Reserved.
+# Copyright (c) 2019,2023 by Landon Curt Noll.  All Rights Reserved.
 #
 # Permission to use, copy, modify, and distribute this software and
 # its documentation for any purpose and without fee is hereby granted,
@@ -27,11 +27,10 @@
 # Share and enjoy! :-)
 
 
-SHELL= /bin/bash
+SHELL= bash
 
 INSTALL= install
 
-GDESTDIR= /usr/global/bin
 DESTDIR= /usr/local/bin
 
 TARGETS= clonepath
@@ -46,10 +45,4 @@ clean quick_clean quick_distclean distclean:
 clobber quick_clobber: clean
 
 install: all
-	@if [[ -d "${GDESTDIR}" ]]; then \
-	    echo ${INSTALL} -m 0555 ${TARGETS} ${GDESTDIR}; \
-	    ${INSTALL} -m 0555 ${TARGETS} ${GDESTDIR}; \
-	else \
-	    echo ${INSTALL} -m 0555 ${TARGETS} ${DESTDIR}; \
-	    ${INSTALL} -m 0555 ${TARGETS} ${DESTDIR}; \
-	fi
+	${INSTALL} -m 0555 ${TARGETS} ${DESTDIR}
