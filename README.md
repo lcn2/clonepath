@@ -15,7 +15,7 @@ sudo make install
 Clone the tree under `/path/2/clone` into the directory under `/clone/under`:
 
 ```sh
-/usr/local/bin/clonepath /path/2/clone /clone/under
+$ /usr/local/bin/clonepath /path/2/clone /clone/under
 ```
 
 
